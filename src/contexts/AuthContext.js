@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from 'react';
+import { ethers } from 'ethers';
 
 const AuthContext = createContext();
 
@@ -8,6 +9,7 @@ export function AuthProvider({ children }) {
     accessToken: null,
     walletAddress: null
   });
+  const [error, setError] = useState(null);
 
   const loginOAuth = (token) => {
     setAuthState({
@@ -17,12 +19,41 @@ export function AuthProvider({ children }) {
     });
   };
 
-  const loginWallet = (address) => {
-    setAuthState({
-      isAuthenticated: true,
-      accessToken: null,
-      walletAddress: address
-    });
+  const handleMetaMaskLogin = async () => {
+    try {
+      setError(null);
+      
+      if (!window.ethereum) {
+        throw new Error('MetaMask not installed');
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+
+      // Request signature for authentication
+      const message = `Authenticate to Hello World App: ${Date.now()}`;
+      const signature = await signer.signMessage(message);
+
+      // Basic signature verification (should be server-side in production)
+      const verifiedAddress = ethers.verifyMessage(message, signature);
+      if (verifiedAddress.toLowerCase() !== address.toLowerCase()) {
+        throw new Error('Signature verification failed');
+      }
+
+      setAuthState({
+        isAuthenticated: true,
+        accessToken: null,
+        walletAddress: address
+      });
+
+    } catch (err) {
+      setError(err.message);
+      if (err.code === 4001) { // User rejected request
+        setError('Login canceled by user');
+      }
+      throw err;
+    }
   };
 
   const logout = () => {
@@ -34,7 +65,13 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ ...authState, loginOAuth, loginWallet, logout }}>
+    <AuthContext.Provider value={{
+      ...authState,
+      error,
+      loginOAuth,
+      handleMetaMaskLogin,
+      logout
+    }}>
       {children}
     </AuthContext.Provider>
   );
